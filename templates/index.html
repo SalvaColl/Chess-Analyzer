@@ -258,7 +258,6 @@
     <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
 
     <script>
-        // --- Globals ---
         var board, game, moves = [], currentStep = 0;
         var whiteClocks = [], blackClocks = [];
         var myUsername = "Nito8686".toLowerCase(); 
@@ -277,7 +276,6 @@
             b: { brilliant: 0, critical: 0, best: 0, excellent: 0, okay: 0, inaccuracy: 0, mistake: 0, blunder: 0, book: 0 }
         };
 
-        // --- Initialization ---
         var config = {
             position: 'start',
             pieceTheme: '/static/img/chesspieces/wikipedia/{piece}.png'
@@ -291,7 +289,7 @@
             .catch(err => console.log("No initial game loaded."));
 
         
-        // --- Fetch Games Logic ---
+        // Fetch games
         document.getElementById("fetchGamesBtn").addEventListener("click", function() {
             var platform = document.getElementById("platformSelect").value;
             var username = document.getElementById("usernameInput").value;
@@ -311,9 +309,8 @@
             .then(data => {
                 if (data.games) {
                     fetchedGamesList = data.games;
-                    dropdown.innerHTML = ""; // Clear old options
+                    dropdown.innerHTML = ""; 
                     
-                    // Add all 10 games to the dropdown menu
                     fetchedGamesList.forEach((game, index) => {
                         var option = document.createElement("option");
                         option.value = index;
@@ -333,7 +330,7 @@
             });
         });
 
-        // 2. Load the specific game you chose from the dropdown
+        // Load chosen game
         document.getElementById("loadSelectedBtn").addEventListener("click", function() {
             var username = document.getElementById("usernameInput").value;
             var dropdown = document.getElementById("gameDropdown");
@@ -376,14 +373,11 @@
         document.getElementById("analyzeBtn").addEventListener("click", function() {
             targetDepth = parseInt(document.getElementById("depthSelect").value);
             
-            // Build FEN array safely using the moves we already have
             gameFens = [];
             var tempGame = new Chess();
             
-            // Push the starting board
             gameFens.push(tempGame.fen()); 
             
-            // Loop through the moves we loaded from the fetch button
             for (var i = 0; i < moves.length; i++) {
                 tempGame.move(moves[i]);
                 gameFens.push(tempGame.fen());
@@ -393,7 +387,7 @@
             document.getElementById("analysisProgress").style.display = "block";
             document.getElementById("analysisProgress").innerText = "Server is analyzing (Hang tight!)...";
             
-            // Send the entire game to Python and your .exe
+            // Sending the game for python to analyse it with Stockfish
             fetch('/api/analyze', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -470,9 +464,8 @@
             updateUI(); 
         }
 
-        // --- Math & Icons ---
+        // Needs a lot of fixing and openings book
         function getWinChance(cp) {
-            // A more accurate scaling constant for modern neural network engines
             return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * cp)) - 1);
         }
 
@@ -499,8 +492,6 @@
                 let side = (i % 2 !== 0) ? 'w' : 'b';
                 let wpl = Math.max(0, side === 'w' ? (prevW - currW) : (currW - prevW));
 
-                // CAPS2-style Curve: Heavily punishes the first 5-10% of loss
-                // This ensures a "normal" game lands in the 70s/80s rather than 90s.
                 let accuracy = 100 * Math.pow(0.94, wpl / 1.5); 
                 scores[side].push(accuracy);
             }
@@ -528,7 +519,6 @@
             }
         }
 
-        // --- Chart Generation ---
         function renderChart() {
             var ctx = document.getElementById('evalChart').getContext('2d');
             if (evalChartInstance) evalChartInstance.destroy();
@@ -614,7 +604,6 @@
             evalChartInstance.update('none'); 
         }
 
-        // --- UI Updates ---
         function updateEvalBar(score) {
             if (score === null) score = 0;
             var percentage = 50 + (score * 8); 
@@ -660,7 +649,6 @@
             highlightCurrentMoveOnChart();
         }
 
-        // --- Time & PGN Parsers ---
         function formatTime(timeStr) {
             var parts = timeStr.split(':');
             if (parts.length === 3) {
@@ -725,7 +713,6 @@
             }
         }
 
-        // --- Controls ---
         document.getElementById("nextBtn").addEventListener("click", function() {
             if (currentStep < moves.length) {
                 game.move(moves[currentStep]);
