@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chess Analysis Dashboard</title>
+    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #312e2b;
+            color: #ffffff;
+            display: flex;
+            justify-content: center;
+            padding-top: 40px;
+            margin: 0;
+        }
+
+        .chess-layout { display: flex; gap: 20px; }
+        
+        .board-column {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .player-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: #262421;
+            padding: 10px 15px;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .player-name { font-weight: bold; font-size: 16px; color: #c3c2c1; }
+
+        .timer {
+            background-color: #21201e;
+            color: #fff;
+            padding: 6px 12px;
+            font-family: "Courier New", Courier, monospace;
+            font-size: 20px;
+            font-weight: bold;
+            border-radius: 4px;
+            border: 2px solid #3c3a38;
+        }
+
+        .sidebar {
+            width: 350px;
+            background-color: #262421;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            max-height: 860px;
+            overflow-y: auto;
+        }
+
+        .sidebar-content { flex-grow: 1; padding: 15px; }
+
+        .controls {
+            display: flex;
+            background-color: #2c2b29;
+            padding: 10px;
+            border-radius: 0 0 8px 8px;
+            justify-content: space-between;
+            border-top: 1px solid #3c3a38;
+            position: sticky;
+            bottom: 0;
+        }
+
+        .eval-container {
+            position: relative; 
+            width: 35px; 
+            background-color: #403d39;
+            border-radius: 4px;
+            overflow: hidden;
+            display: flex;
+            align-items: flex-end;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.5) inset;
+        }
+
+        .eval-text {
+            position: absolute;
+            width: 100%;
+            text-align: center;
+            left: 0;
+            z-index: 10;
+            font-size: 11px;
+            font-weight: bold;
+            font-family: sans-serif;
+            bottom: 50%;
+            transform: translateY(50%);
+            pointer-events: none;
+        }
+
+        .eval-fill {
+            width: 100%;
+            background-color: #ffffff; 
+            height: 50%;
+            transition: height 0.4s ease-in-out;
+        }
+
+        button {
+            background: none;
+            border: none;
+            color: #989795;
+            font-size: 18px;
+            font-weight: bold;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.2s, color 0.2s;
+        }
+
+        button:hover { background-color: #3c3a38; color: #ffffff; }
+
+        /* Icon CSS */
+        .move-icon-floating {
+            position: absolute;
+            width: 28px;
+            height: 28px;
+            z-index: 1000;
+            top: -12px;
+            right: -12px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 50%;
+            font-size: 15px;
+            font-weight: bold;
+            color: white;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.4);
+            border: 2px solid #262421;
+            pointer-events: none;
+            animation: iconAppear 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        @keyframes iconAppear {
+            0% { opacity: 0; transform: scale(0.3); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+
+        /* Chess.com Colors */
+        .brilliant { background-color: #1baca1; } 
+        .critical { background-color: #5c8bb0; }     
+        .best { background-color: #95bb4a; }      
+        .excellent { background-color: #95bb4a; } 
+        .okay { background-color: #a8b693; }      
+        .book { background-color: #a88865; }      
+        .inaccuracy { background-color: #f0c15c; } 
+        .mistake { background-color: #e6912c; }    
+        .blunder { background-color: #b33430; }    
+    </style>
+</head>
+<body>
+
+    <div class="chess-layout"> 
+        <div class="board-column">
+            <div class="player-info">
+                <span class="player-name" id="topName">Opponent</span>
+                <span class="timer" id="topTimer">0:00</span>
+            </div>
+
+            <div style="display: flex; gap: 10px;">
+                <div class="eval-container">
+                    <div class="eval-fill" id="evalFill"></div>
+                    <div id="evalText" class="eval-text">0.0</div>
+                </div>
+                
+                <div id="myBoard" style="width: 800px; position: relative;"></div>
+            </div>
+
+            <div class="player-info">
+                <span class="player-name" id="bottomName">You</span>
+                <span class="timer" id="bottomTimer">0:00</span>
+            </div>
+        </div>
+
+        <div class="sidebar">
+            <div class="sidebar-content">
+                
+                <div style="background: #21201e; padding: 10px; border-radius: 5px; margin-bottom: 15px; border: 1px solid #3c3a38;">
+                    <h4 style="margin-top: 0; margin-bottom: 10px; color: #c3c2c1;">Load Game</h4>
+                    <select id="platformSelect" style="width: 100%; padding: 6px; margin-bottom: 5px; background: #3c3a38; color: white; border: none; border-radius: 3px;">
+                        <option value="lichess">Lichess</option>
+                        <option value="chesscom">Chess.com</option>
+                    </select>
+                    <input type="text" id="usernameInput" value="Nito8686" style="width: 94%; padding: 6px; margin-bottom: 10px; background: #3c3a38; color: white; border: none; border-radius: 3px;">
+                    
+                    <button id="fetchGamesBtn" style="width: 100%; background-color: #5c8bb0; color: white; padding: 8px; border-radius: 3px; font-size: 14px; margin-bottom: 10px;">Find Recent Games</button>
+                    
+                    <div id="gameSelectContainer" style="display: none;">
+                        <select id="gameDropdown" style="width: 100%; padding: 6px; margin-bottom: 10px; background: #3c3a38; color: white; border: none; border-radius: 3px;">
+                            </select>
+                        <button id="loadSelectedBtn" style="width: 100%; background-color: #95bb4a; color: white; padding: 8px; border-radius: 3px; font-size: 14px;">Load Selected Board</button>
+                    </div>
+
+                    <div id="statusMsg" style="margin-top: 5px; font-size: 12px; color: #aaa; text-align: center;"></div>
+                </div>
+
+                <div id="analysisSetupBox">
+                    <h3 style="margin-top: 0; color: #95bb4a; text-align: center;">Game Review</h3>
+                    <label style="font-size: 12px; color: #aaa;">Engine Depth:</label>
+                    <select id="depthSelect" style="width: 100%; padding: 6px; margin-bottom: 10px; background: #3c3a38; color: white; border: none; border-radius: 3px;">
+                        <option value="12">Fast (Depth 12)</option>
+                        <option value="14" selected>Standard (Depth 14)</option>
+                        <option value="16">Deep (Depth 16)</option>
+                    </select>
+                    <button id="analyzeBtn" style="width: 100%; background-color: #95bb4a; color: white; padding: 10px; border-radius: 4px; font-size: 16px;">
+                        Run Full Analysis
+                    </button>
+                    <div id="analysisProgress" style="margin-top: 10px; font-size: 14px; text-align: center; color: #f0c15c;"></div>
+                </div>
+
+                <div id="dashboardBox" style="display: none; padding-top: 15px;">
+                    
+                    <div style="background-color: #21201e; border-radius: 5px; padding: 5px; margin-bottom: 15px; height: 120px;">
+                        <canvas id="evalChart"></canvas>
+                    </div>
+
+                    <h3 style="text-align: center; border-bottom: 1px solid #555; padding-bottom: 5px; margin-top: 0;">Accuracies</h3>
+                    <div style="display: flex; justify-content: space-between; font-size: 24px; font-weight: bold; margin-bottom: 15px;">
+                        <div id="whiteAcc" style="background: white; color: black; padding: 5px 15px; border-radius: 4px;">--%</div>
+                        <div id="blackAcc" style="background: black; color: white; padding: 5px 15px; border-radius: 4px;">--%</div>
+                    </div>
+
+                    <table style="width: 100%; text-align: center; border-collapse: collapse;">
+                        <thead>
+                            <tr style="font-size: 12px; color: #aaa;">
+                                <th style="text-align: left; padding-bottom: 8px;">Category</th>
+                                <th style="padding-bottom: 8px;">White</th>
+                                <th></th>
+                                <th style="padding-bottom: 8px;">Black</th>
+                            </tr>
+                        </thead>
+                        <tbody id="statsTableBody" style="font-size: 16px; font-weight: bold;">
+                            </tbody>
+                    </table>
+                </div>
+
+            </div>
+            
+            <div class="controls">
+                <button id="startBtn" title="Start Position">|&larr;</button>
+                <button id="prevBtn" title="Previous Move">&larr;</button>
+                <button id="playBtn" title="Play Game" style="font-size: 14px; padding-left: 18px;">&#9658;</button>
+                <button id="nextBtn" title="Next Move">&rarr;</button>
+                <button id="endBtn" title="End Position">&rarr;|</button>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+
+    <script>
+        // --- Globals ---
+        var board, game, moves = [], currentStep = 0;
+        var whiteClocks = [], blackClocks = [];
+        var myUsername = "Nito8686".toLowerCase(); 
+        var playerOrientation = "white"; 
+        
+        var fetchedGamesList = [];
+        var gameFens = [];  
+        var gameEvals = [];
+        var moveIcons = [];
+        var targetDepth = 14;   
+        
+        var evalChartInstance = null;
+
+        var moveStats = {
+            w: { brilliant: 0, critical: 0, best: 0, excellent: 0, okay: 0, inaccuracy: 0, mistake: 0, blunder: 0, book: 0 },
+            b: { brilliant: 0, critical: 0, best: 0, excellent: 0, okay: 0, inaccuracy: 0, mistake: 0, blunder: 0, book: 0 }
+        };
+
+        // --- Initialization ---
+        var config = {
+            position: 'start',
+            pieceTheme: '/static/img/chesspieces/wikipedia/{piece}.png'
+        };
+        board = Chessboard('myBoard', config);
+        game = new Chess();
+
+        fetch('/api/game')
+            .then(response => response.json())
+            .then(data => { if(data.pgn) loadNewPGN(data.pgn, myUsername); })
+            .catch(err => console.log("No initial game loaded."));
+
+        
+        // --- Fetch Games Logic ---
+        document.getElementById("fetchGamesBtn").addEventListener("click", function() {
+            var platform = document.getElementById("platformSelect").value;
+            var username = document.getElementById("usernameInput").value;
+            var status = document.getElementById("statusMsg");
+            var dropdownContainer = document.getElementById("gameSelectContainer");
+            var dropdown = document.getElementById("gameDropdown");
+
+            status.innerText = "Searching for games...";
+            dropdownContainer.style.display = "none"; 
+            
+            fetch('/api/fetch_recent_games', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ platform: platform, username: username })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.games) {
+                    fetchedGamesList = data.games;
+                    dropdown.innerHTML = ""; // Clear old options
+                    
+                    // Add all 10 games to the dropdown menu
+                    fetchedGamesList.forEach((game, index) => {
+                        var option = document.createElement("option");
+                        option.value = index;
+                        option.text = game.label;
+                        dropdown.appendChild(option);
+                    });
+                    
+                    status.innerText = `Found ${fetchedGamesList.length} games!`;
+                    dropdownContainer.style.display = "block"; // Unhide the dropdown
+                } else {
+                    status.innerText = "Error: " + data.error;
+                }
+            })
+            .catch(err => {
+                status.innerText = "Server error.";
+                console.error(err);
+            });
+        });
+
+        // 2. Load the specific game you chose from the dropdown
+        document.getElementById("loadSelectedBtn").addEventListener("click", function() {
+            var username = document.getElementById("usernameInput").value;
+            var dropdown = document.getElementById("gameDropdown");
+            var selectedIndex = dropdown.value;
+            
+            var selectedPgn = fetchedGamesList[selectedIndex].pgn;
+            document.getElementById("statusMsg").innerText = "Game Loaded!";
+            
+            loadNewPGN(selectedPgn, username);
+        });
+
+        function loadNewPGN(pgnString, username) {
+            game = new Chess();
+            game.load_pgn(pgnString);
+            moves = game.history();
+            currentStep = 0;
+            
+            gameEvals = [];
+            moveIcons = [];
+            whiteClocks = [];
+            blackClocks = [];
+            
+            moveStats = {
+                w: { brilliant: 0, critical: 0, best: 0, excellent: 0, okay: 0, inaccuracy: 0, mistake: 0, blunder: 0, book: 0 },
+                b: { brilliant: 0, critical: 0, best: 0, excellent: 0, okay: 0, inaccuracy: 0, mistake: 0, blunder: 0, book: 0 }
+            };
+
+            document.getElementById("dashboardBox").style.display = "none";
+            document.getElementById("analyzeBtn").style.display = "block";
+            document.getElementById("analysisProgress").innerText = "";
+            if (evalChartInstance) evalChartInstance.destroy();
+
+            myUsername = username.toLowerCase();
+            parsePGNData(pgnString);
+
+            game.reset(); 
+            updateUI();
+        }
+
+        document.getElementById("analyzeBtn").addEventListener("click", function() {
+            targetDepth = parseInt(document.getElementById("depthSelect").value);
+            
+            // Build FEN array safely using the moves we already have
+            gameFens = [];
+            var tempGame = new Chess();
+            
+            // Push the starting board
+            gameFens.push(tempGame.fen()); 
+            
+            // Loop through the moves we loaded from the fetch button
+            for (var i = 0; i < moves.length; i++) {
+                tempGame.move(moves[i]);
+                gameFens.push(tempGame.fen());
+            }
+
+            document.getElementById("analyzeBtn").style.display = "none";
+            document.getElementById("analysisProgress").style.display = "block";
+            document.getElementById("analysisProgress").innerText = "Server is analyzing (Hang tight!)...";
+            
+            // Send the entire game to Python and your .exe
+            fetch('/api/analyze', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fens: gameFens, depth: targetDepth })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if(data.error) {
+                    document.getElementById("analysisProgress").innerText = "Error: " + data.error;
+                    document.getElementById("analyzeBtn").style.display = "block";
+                    return;
+                }
+                
+                gameEvals = data.evals;
+                moveIcons = new Array(gameEvals.length).fill(null);
+                
+                for (var i = 1; i < gameEvals.length; i++) {
+                    var previousEval = gameEvals[i - 1];
+                    var currentMoveEval = gameEvals[i];
+                    var wasWhiteMove = (i % 2 !== 0);
+                    
+                    var iconData;
+                    if (i <= 10) { 
+                        iconData = { symbol: "📖", class: "book" };
+                    } else {
+                        iconData = getAccuracyIcon(currentMoveEval, previousEval, wasWhiteMove);
+                    }
+
+                    moveIcons[i] = iconData;
+                    var side = wasWhiteMove ? 'w' : 'b';
+                    moveStats[side][iconData.class]++;
+                }
+                
+                finishAnalysis();
+            })
+            .catch(err => {
+                document.getElementById("analysisProgress").innerText = "Server connection failed.";
+                document.getElementById("analyzeBtn").style.display = "block";
+                console.error(err);
+            });
+        });
+
+        function finishAnalysis() {
+            document.getElementById("analysisProgress").style.display = "none";
+            document.getElementById("dashboardBox").style.display = "block";
+
+            var tbody = document.getElementById("statsTableBody");
+            tbody.innerHTML = ""; 
+
+            var categories = [
+                { key: 'brilliant', label: 'Brilliant', color: '#1baca1', symbol: '!!' },
+                { key: 'critical', label: 'Critical', color: '#5c8bb0', symbol: '!' },
+                { key: 'best', label: 'Best', color: '#95bb4a', symbol: '⭐' },
+                { key: 'excellent', label: 'Excellent', color: '#95bb4a', symbol: '👍' },
+                { key: 'okay', label: 'Okay', color: '#a8b693', symbol: '✔️' },
+                { key: 'inaccuracy', label: 'Inaccuracy', color: '#f0c15c', symbol: '?!' },
+                { key: 'mistake', label: 'Mistake', color: '#e6912c', symbol: '?' },
+                { key: 'blunder', label: 'Blunder', color: '#b33430', symbol: '??' },
+                { key: 'book', label: 'Theory', color: '#a88865', symbol: '📖' }
+            ];
+
+            categories.forEach(cat => {
+                var row = `<tr style="color: ${cat.color}; height: 32px;">
+                    <td style="text-align: left;">${cat.label}</td>
+                    <td>${moveStats.w[cat.key]}</td>
+                    <td><span style="background-color: ${cat.color}; color: white; border-radius: 50%; padding: 3px 7px; font-size: 13px;">${cat.symbol}</span></td>
+                    <td>${moveStats.b[cat.key]}</td>
+                </tr>`;
+                tbody.innerHTML += row;
+            });
+
+            calculateOverallAccuracy();
+            renderChart();
+            updateUI(); 
+        }
+
+        // --- Math & Icons ---
+        function getWinChance(cp) {
+            // A more accurate scaling constant for modern neural network engines
+            return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * cp)) - 1);
+        }
+
+        function getAccuracyIcon(currentEval, previousEval, wasWhiteMove) {
+            let prevW = getWinChance(previousEval * 100);
+            let currW = getWinChance(currentEval * 100);
+            let wpl = wasWhiteMove ? (prevW - currW) : (currW - prevW);
+            wpl = Math.max(0, wpl);
+
+            if (wpl < 2) return { symbol: "⭐", class: "best" };
+            if (wpl < 5) return { symbol: "👍", class: "excellent" };
+            if (wpl < 10) return { symbol: "✔️", class: "okay" };
+            if (wpl < 20) return { symbol: "?!", class: "inaccuracy" };
+            if (wpl < 35) return { symbol: "?", class: "mistake" };
+            return { symbol: "??", class: "blunder" };
+        }
+
+        function calculateOverallAccuracy() {
+            let scores = { w: [], b: [] };
+
+            for (let i = 1; i < gameEvals.length; i++) {
+                let prevW = getWinChance(gameEvals[i-1] * 100);
+                let currW = getWinChance(gameEvals[i] * 100);
+                let side = (i % 2 !== 0) ? 'w' : 'b';
+                let wpl = Math.max(0, side === 'w' ? (prevW - currW) : (currW - prevW));
+
+                // CAPS2-style Curve: Heavily punishes the first 5-10% of loss
+                // This ensures a "normal" game lands in the 70s/80s rather than 90s.
+                let accuracy = 100 * Math.pow(0.94, wpl / 1.5); 
+                scores[side].push(accuracy);
+            }
+
+            const average = arr => arr.length ? (arr.reduce((a,b) => a+b)/arr.length).toFixed(1) : "100.0";
+            document.getElementById("whiteAcc").innerText = average(scores.w) + "%";
+            document.getElementById("blackAcc").innerText = average(scores.b) + "%";
+        }
+
+        function showMoveIcon(data) {
+            $(".move-icon-floating").remove();
+            if (currentStep === 0) return;
+            
+            var history = game.history({ verbose: true });
+            var lastMove = history[currentStep - 1];
+            if(!lastMove) return;
+            var targetSquare = lastMove.to; 
+
+            var squareEl = $('#myBoard').find('.square-' + targetSquare);
+            if (squareEl.length > 0) {
+                var icon = $('<div class="move-icon-floating"></div>')
+                    .addClass(data.class)
+                    .text(data.symbol);
+                squareEl.append(icon);
+            }
+        }
+
+        // --- Chart Generation ---
+        function renderChart() {
+            var ctx = document.getElementById('evalChart').getContext('2d');
+            if (evalChartInstance) evalChartInstance.destroy();
+
+            var chartData = gameEvals.map(function(score) {
+                if (score === null) return 0;
+                if (score > 10) return 10;
+                if (score < -10) return -10;
+                return score;
+            });
+
+            var pointColors = chartData.map(score => score >= 0 ? '#ffffff' : '#555555');
+
+            evalChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: chartData.map((_, i) => i), 
+                    datasets: [{
+                        label: 'Eval',
+                        data: chartData,
+                        borderColor: '#ffffff',
+                        borderWidth: 2,
+                        pointBackgroundColor: pointColors,
+                        pointRadius: 0, 
+                        pointHoverRadius: 5,
+                        fill: {
+                            target: 'origin', 
+                            above: 'rgba(255, 255, 255, 0.2)',   
+                            below: 'rgba(0, 0, 0, 0.4)'          
+                        },
+                        stepped: true 
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { display: false }, 
+                        y: { display: false, min: -10, max: 10 }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    var val = context.parsed.y;
+                                    return (val > 0 ? "+" : "") + val.toFixed(1);
+                                }
+                            }
+                        }
+                    },
+                    onClick: (e, elements) => {
+                        if (elements.length > 0) {
+                            var clickedIndex = elements[0].index;
+                            game.reset();
+                            for(var i=0; i<clickedIndex; i++){ game.move(moves[i]); }
+                            currentStep = clickedIndex;
+                            updateUI();
+                        }
+                    }
+                }
+            });
+        }
+
+        function highlightCurrentMoveOnChart() {
+            if (!evalChartInstance) return;
+
+            var dataset = evalChartInstance.data.datasets[0];
+            var totalPoints = dataset.data.length;
+
+            var radii = new Array(totalPoints).fill(0);
+            var pointColors = dataset.data.map(score => score >= 0 ? '#ffffff' : '#555555');
+
+            if (currentStep < totalPoints) {
+                radii[currentStep] = 6;               
+                pointColors[currentStep] = '#f0c15c'; 
+            }
+
+            dataset.pointRadius = radii;
+            dataset.pointBackgroundColor = pointColors;
+            dataset.pointBorderColor = pointColors;
+
+            evalChartInstance.update('none'); 
+        }
+
+        // --- UI Updates ---
+        function updateEvalBar(score) {
+            if (score === null) score = 0;
+            var percentage = 50 + (score * 8); 
+            percentage = Math.max(5, Math.min(95, percentage));
+
+            var displayScore = score.toFixed(1);
+            if (score > 0) displayScore = "+" + displayScore;
+            if (Math.abs(score) >= 10) displayScore = score > 0 ? "M" : "-M";
+
+            var visualPercentage = playerOrientation === "black" ? (100 - percentage) : percentage;
+
+            var fillEl = document.getElementById("evalFill");
+            var textEl = document.getElementById("evalText");
+
+            fillEl.style.height = visualPercentage + "%";
+            textEl.innerText = displayScore;
+            textEl.style.color = visualPercentage > 50 ? "#000000" : "#ffffff";
+        }
+
+        function updateUI() {
+            $(".move-icon-floating").remove();
+            board.position(game.fen());
+            
+            var wTime = whiteClocks[currentStep] || "0:00";
+            var bTime = blackClocks[currentStep] || "0:00";
+            if (playerOrientation === "white") {
+                document.getElementById("bottomTimer").innerText = wTime;
+                document.getElementById("topTimer").innerText = bTime;
+            } else {
+                document.getElementById("bottomTimer").innerText = bTime;
+                document.getElementById("topTimer").innerText = wTime;
+            }
+
+            if (gameEvals.length > 0 && gameEvals[currentStep] !== null) {
+                updateEvalBar(gameEvals[currentStep]);
+                if (moveIcons[currentStep]) {
+                    showMoveIcon(moveIcons[currentStep]);
+                }
+            } else {
+                updateEvalBar(0);
+            }
+
+            highlightCurrentMoveOnChart();
+        }
+
+        // --- Time & PGN Parsers ---
+        function formatTime(timeStr) {
+            var parts = timeStr.split(':');
+            if (parts.length === 3) {
+                var hours = parseInt(parts[0], 10);
+                var minutes = parseInt(parts[1], 10);
+                var seconds = parts[2]; 
+                if (hours > 0) minutes = (hours * 60) + minutes;
+                return minutes + ":" + seconds;
+            }
+            return timeStr; 
+        }
+
+        function parsePGNData(pgnString) {
+            var whiteMatch = pgnString.match(/\[White "(.*?)"\]/);
+            var blackMatch = pgnString.match(/\[Black "(.*?)"\]/);
+            
+            var wName = whiteMatch ? whiteMatch[1] : "White";
+            var bName = blackMatch ? blackMatch[1] : "Black";
+
+            if (bName.toLowerCase() === myUsername) {
+                playerOrientation = "black";
+                board.orientation('black');
+            } else {
+                playerOrientation = "white";
+                board.orientation('white');
+            }
+
+            if (playerOrientation === "white") {
+                document.getElementById("bottomName").innerText = wName;
+                document.getElementById("topName").innerText = bName;
+            } else {
+                document.getElementById("bottomName").innerText = bName;
+                document.getElementById("topName").innerText = wName;
+            }
+
+            var initialTime = "0:00";
+            var tcMatch = pgnString.match(/\[TimeControl "(\d+)(?:\+\d+)?"\]/);
+            if (tcMatch) {
+                var totalSeconds = parseInt(tcMatch[1], 10);
+                var m = Math.floor(totalSeconds / 60);
+                var s = totalSeconds % 60;
+                initialTime = m + ":" + (s < 10 ? "0" : "") + s;
+            }
+
+            whiteClocks.push(initialTime);
+            blackClocks.push(initialTime);
+
+            var clockRegex = /\[%clk\s([\d:]+)\]/g;
+            var match;
+            var moveIndex = 0;
+            
+            while ((match = clockRegex.exec(pgnString)) !== null) {
+                var cleanTime = formatTime(match[1]);
+                if (moveIndex % 2 === 0) {
+                    whiteClocks.push(cleanTime);
+                    blackClocks.push(blackClocks[blackClocks.length - 1]);
+                } else {
+                    whiteClocks.push(whiteClocks[whiteClocks.length - 1]);
+                    blackClocks.push(cleanTime);
+                }
+                moveIndex++;
+            }
+        }
+
+        // --- Controls ---
+        document.getElementById("nextBtn").addEventListener("click", function() {
+            if (currentStep < moves.length) {
+                game.move(moves[currentStep]);
+                currentStep++;                
+                updateUI();
+            }
+        });
+
+        document.getElementById("prevBtn").addEventListener("click", function() {
+            if (currentStep > 0) {
+                game.undo();                
+                currentStep--;              
+                updateUI();
+            }
+        });
+
+        document.getElementById("startBtn").addEventListener("click", function() {
+            game.reset();          
+            currentStep = 0;    
+            updateUI();
+        });
+
+        document.getElementById("endBtn").addEventListener("click", function() {
+            while (currentStep < moves.length) {
+                game.move(moves[currentStep]);
+                currentStep++;
+            }
+            updateUI();
+        });
+
+        var playInterval = null; 
+        document.getElementById("playBtn").addEventListener("click", function() {
+            if (playInterval) {
+                clearInterval(playInterval);
+                playInterval = null;
+                this.innerHTML = "&#9658;";
+                return;
+            }
+            this.innerHTML = "&#10074;&#10074;"; 
+            playInterval = setInterval(function() {
+                if (currentStep < moves.length) {
+                    game.move(moves[currentStep]);
+                    currentStep++;
+                    updateUI(); 
+                    if(moveIcons[currentStep] && moveIcons[currentStep].class == "brilliant") {
+                        stopAutoPlay();
+                        return;
+                    }
+                } else {
+                    clearInterval(playInterval);
+                    playInterval = null;
+                    document.getElementById("playBtn").innerHTML = "&#9658;";
+                }
+            }, 1000); 
+        });
+
+        function stopAutoPlay() {
+            if (playInterval) {
+                clearInterval(playInterval);
+                playInterval = null;
+                document.getElementById("playBtn").innerHTML = "&#9658;";
+            }
+        }
+        document.getElementById("nextBtn").addEventListener("click", stopAutoPlay);
+        document.getElementById("prevBtn").addEventListener("click", stopAutoPlay);
+        document.getElementById("startBtn").addEventListener("click", stopAutoPlay);
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'ArrowRight') document.getElementById('nextBtn').click();
+            else if (e.key === 'ArrowLeft') document.getElementById('prevBtn').click();
+        });
+    </script>
+</body>
+</html>

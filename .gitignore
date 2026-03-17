@@ -179,3 +179,15 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+
+# --- Custom Chess App Files ---
+
+# Ignore the heavy Stockfish engine executables
+stockfish/
+*.exe
+*.wasm
+
+# Ignore OS-generated junk files
+.DS_Store
+Thumbs.db
