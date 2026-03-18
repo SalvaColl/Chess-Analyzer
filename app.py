@@ -96,25 +96,42 @@ def analyze_game():
     depth = int(data.get('depth', 14))
     
     evals = []
+    best_moves = [] 
     
     try:
         with chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH) as engine:
             for fen in fens:
                 board = chess.Board(fen)
+                
+                if board.is_checkmate():
+                    evals.append(30.0 if board.turn == chess.BLACK else -30.0)
+                    best_moves.append(None) 
+                    continue
+                elif board.is_game_over():
+                    evals.append(0.0)
+                    best_moves.append(None)
+                    continue
+                
                 info = engine.analyse(board, chess.engine.Limit(depth=depth))
                 
-                score = info["score"].white() 
+                top_move = None
+                if "pv" in info and len(info["pv"]) > 0:
+                    top_move = info["pv"][0].uci()
+                best_moves.append(top_move)
                 
+                score = info["score"].white() 
                 if score.is_mate():
-                    mate_in = score.mate()
-                    eval_val = 30.0 if mate_in > 0 else -30.0
+                    mate_moves = score.mate()
+                    if mate_moves is not None:
+                        eval_val = 30.0 if mate_moves > 0 else -30.0
+                    else:
+                        eval_val = 30.0 if board.turn == chess.BLACK else -30.0
                 else:
-                    # Score is given in Centipawns -> Convert to pawns
                     eval_val = score.score() / 100.0 
                     
                 evals.append(eval_val)
                 
-        return jsonify({"evals": evals})
+        return jsonify({"evals": evals, "best_moves": best_moves})
     
     except Exception as e:
         return jsonify({"error": str(e)}), 500

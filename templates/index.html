@@ -383,6 +383,8 @@
                 gameFens.push(tempGame.fen());
             }
 
+            var verboseHistory = tempGame.history({ verbose: true });
+
             document.getElementById("analyzeBtn").style.display = "none";
             document.getElementById("analysisProgress").style.display = "block";
             document.getElementById("analysisProgress").innerText = "Server is analyzing (Hang tight!)...";
@@ -402,6 +404,7 @@
                 }
                 
                 gameEvals = data.evals;
+                var gameBestMoves = data.best_moves; // The top moves from Python
                 moveIcons = new Array(gameEvals.length).fill(null);
                 
                 for (var i = 1; i < gameEvals.length; i++) {
@@ -409,11 +412,16 @@
                     var currentMoveEval = gameEvals[i];
                     var wasWhiteMove = (i % 2 !== 0);
                     
+                    var playedMove = verboseHistory[i - 1];
+                    var playedUci = playedMove.from + playedMove.to + (playedMove.promotion || "");
+                    
+                    var isEngineTopChoice = (playedUci === gameBestMoves[i - 1]);
+                    
                     var iconData;
-                    if (i <= 10) { 
+                    if (i <= 10 && previousEval > -1.0 && previousEval < 1.0 && currentMoveEval > -1.0 && currentMoveEval < 1.0) { 
                         iconData = { symbol: "📖", class: "book" };
                     } else {
-                        iconData = getAccuracyIcon(currentMoveEval, previousEval, wasWhiteMove);
+                        iconData = getAccuracyIcon(currentMoveEval, previousEval, wasWhiteMove, isEngineTopChoice);
                     }
 
                     moveIcons[i] = iconData;
@@ -469,36 +477,56 @@
             return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * cp)) - 1);
         }
 
-        function getAccuracyIcon(currentEval, previousEval, wasWhiteMove) {
-            let prevW = getWinChance(previousEval * 100);
-            let currW = getWinChance(currentEval * 100);
-            let wpl = wasWhiteMove ? (prevW - currW) : (currW - prevW);
+        function getAccuracyIcon(currentEval, previousEval, wasWhiteMove, isEngineTopChoice) {
+            var prevW = getWinChance(previousEval * 100);
+            var currW = getWinChance(currentEval * 100);
+            
+            var wpl = wasWhiteMove ? (prevW - currW) : (currW - prevW);
+            
             wpl = Math.max(0, wpl);
 
-            if (wpl < 2) return { symbol: "⭐", class: "best" };
-            if (wpl < 5) return { symbol: "👍", class: "excellent" };
-            if (wpl < 10) return { symbol: "✔️", class: "okay" };
-            if (wpl < 20) return { symbol: "?!", class: "inaccuracy" };
-            if (wpl < 35) return { symbol: "?", class: "mistake" };
-            return { symbol: "??", class: "blunder" };
+            if (isEngineTopChoice) return { symbol: "⭐", class: "best" };
+
+            if (wpl <= 3.0)  return { symbol: "👍", class: "excellent" };  // ~0.3 pawns
+            if (wpl <= 5.0)  return { symbol: "✔️", class: "okay" };       // ~0.5 pawns
+            if (wpl <= 9.0)  return { symbol: "?!", class: "inaccuracy" }; // ~1.0 pawns
+            if (wpl <= 15.0) return { symbol: "?", class: "mistake" };     // ~1.7 pawns
+            
+            return { symbol: "??", class: "blunder" }; // > 2.0 pawns
         }
 
         function calculateOverallAccuracy() {
-            let scores = { w: [], b: [] };
+            var scores = { w: [], b: [] };
 
-            for (let i = 1; i < gameEvals.length; i++) {
-                let prevW = getWinChance(gameEvals[i-1] * 100);
-                let currW = getWinChance(gameEvals[i] * 100);
-                let side = (i % 2 !== 0) ? 'w' : 'b';
-                let wpl = Math.max(0, side === 'w' ? (prevW - currW) : (currW - prevW));
-
-                let accuracy = 100 * Math.pow(0.94, wpl / 1.5); 
-                scores[side].push(accuracy);
+            for (var i = 1; i < gameEvals.length; i++) {
+                var prevW = getWinChance(gameEvals[i-1] * 100);
+                var currW = getWinChance(gameEvals[i] * 100);
+                
+                var isWhite = (i % 2 !== 0);
+                var wpl = isWhite ? (prevW - currW) : (currW - prevW);
+                wpl = Math.max(0, wpl);
+                
+                var moveAcc;
+                if (i <= 10 && wpl <= 1.5) {
+                    moveAcc = 100; 
+                } else {
+                    moveAcc = 100 - (wpl * 1.5); 
+                }
+                
+                moveAcc = Math.max(0, Math.min(100, moveAcc));
+                
+                if (isWhite) {
+                    scores.w.push(moveAcc);
+                } else {
+                    scores.b.push(moveAcc);
+                }
             }
 
-            const average = arr => arr.length ? (arr.reduce((a,b) => a+b)/arr.length).toFixed(1) : "100.0";
-            document.getElementById("whiteAcc").innerText = average(scores.w) + "%";
-            document.getElementById("blackAcc").innerText = average(scores.b) + "%";
+            var finalW = scores.w.length > 0 ? (scores.w.reduce((a,b)=>a+b) / scores.w.length).toFixed(1) : "100.0";
+            var finalB = scores.b.length > 0 ? (scores.b.reduce((a,b)=>a+b) / scores.b.length).toFixed(1) : "100.0";
+
+            document.getElementById("whiteAcc").innerText = finalW + "%";
+            document.getElementById("blackAcc").innerText = finalB + "%";
         }
 
         function showMoveIcon(data) {
@@ -518,7 +546,6 @@
                 squareEl.append(icon);
             }
         }
-
         function renderChart() {
             var ctx = document.getElementById('evalChart').getContext('2d');
             if (evalChartInstance) evalChartInstance.destroy();
