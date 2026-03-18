@@ -371,26 +371,49 @@
         }
 
         // Opening Theory Check
-        async function getBookMovesCount(verboseHistory) {
+        async function getBookMovesCount(verboseHistory, gameFens) {
             var count = 0;
-            var path = "";
-            var maxCheck = Math.min(30, verboseHistory.length); 
+            var maxCheck = Math.min(25, verboseHistory.length); 
             
             for (var i = 0; i < maxCheck; i++) {
-                var uci = verboseHistory[i].from + verboseHistory[i].to + (verboseHistory[i].promotion || "");
-                path += (i === 0 ? "" : ",") + uci;
+                var currentFen = gameFens[i];
+                
+                var playedUci = verboseHistory[i].from + verboseHistory[i].to + (verboseHistory[i].promotion || "");
+                
                 try {
-                    var response = await fetch("https://explorer.lichess.ovh/masters?play=" + path);
+                    var url = "/api/theory?fen=" + encodeURIComponent(currentFen);
+                    var response = await fetch(url);
+                    
+                    if (!response.ok) {
+                        console.warn("Lichess blocked the request! Status:", response.status);
+                        break; 
+                    }
+                    
                     var data = await response.json();
                     
-                    var totalMasterGames = data.white + data.draws + data.black;
+                    var foundMoveInBook = false;
+                    var totalGamesForThisMove = 0;
                     
-                    if (totalMasterGames >= 100) {
+                    for (var j = 0; j < data.moves.length; j++) {
+                        if (data.moves[j].uci === playedUci) {
+                            foundMoveInBook = true;
+                            totalGamesForThisMove = data.moves[j].white + data.moves[j].draws + data.moves[j].black;
+                            break;
+                        }
+                    }
+                    
+                    console.log(`Move ${i+1} (${playedUci}): Found in book? ${foundMoveInBook}, Games: ${totalGamesForThisMove}`);
+
+                    if (foundMoveInBook && totalGamesForThisMove >= 10) {
                         count++;
                     } else {
-                        break;
+                        break; 
                     }
+                    
+                    await new Promise(r => setTimeout(r, 100));
+                    
                 } catch (e) {
+                    console.error("Lichess API fetch failed:", e);
                     break; 
                 }
             }
@@ -423,7 +446,7 @@
                     body: JSON.stringify({ fens: gameFens, depth: targetDepth })
                 }).then(r => r.json());
 
-                var bookPromise = getBookMovesCount(verboseHistory);
+                var bookPromise = getBookMovesCount(verboseHistory, gameFens);
 
                 var [data, trueBookLength] = await Promise.all([pythonPromise, bookPromise]);
 

@@ -4,8 +4,12 @@ import chess.engine
 import os
 import requests
 import json
+from dotenv import load_dotenv
 
 app = Flask(__name__)
+
+load_dotenv()
+LICHESS_TOKEN = os.getenv("LICHESS_TOKEN")
 
 # CHESS.COM REQUIRES A USER-AGENT. 
 HEADERS = {
@@ -96,7 +100,7 @@ def analyze_game():
     depth = int(data.get('depth', 14))
     
     evals = []
-    best_moves = [] 
+    best_moves = []
     
     try:
         with chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH) as engine:
@@ -133,6 +137,24 @@ def analyze_game():
                 
         return jsonify({"evals": evals, "best_moves": best_moves})
     
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
+@app.route('/api/theory', methods=['GET'])
+def get_theory():
+    fen = request.args.get('fen')
+    if not fen:
+        return jsonify({"error": "No FEN provided"}), 400
+        
+    url = f"https://explorer.lichess.ovh/masters?fen={fen}"
+    
+    headers = {}
+    if LICHESS_TOKEN:
+        headers["Authorization"] = f"Bearer {LICHESS_TOKEN}"
+        
+    try:
+        response = requests.get(url, headers=headers)
+        return jsonify(response.json()), response.status_code
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
