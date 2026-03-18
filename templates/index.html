@@ -370,7 +370,34 @@
             updateUI();
         }
 
-        document.getElementById("analyzeBtn").addEventListener("click", function() {
+        // Opening Theory Check
+        async function getBookMovesCount(verboseHistory) {
+            var count = 0;
+            var path = "";
+            var maxCheck = Math.min(30, verboseHistory.length); 
+            
+            for (var i = 0; i < maxCheck; i++) {
+                var uci = verboseHistory[i].from + verboseHistory[i].to + (verboseHistory[i].promotion || "");
+                path += (i === 0 ? "" : ",") + uci;
+                try {
+                    var response = await fetch("https://explorer.lichess.ovh/masters?play=" + path);
+                    var data = await response.json();
+                    
+                    var totalMasterGames = data.white + data.draws + data.black;
+                    
+                    if (totalMasterGames >= 100) {
+                        count++;
+                    } else {
+                        break;
+                    }
+                } catch (e) {
+                    break; 
+                }
+            }
+            return count;
+        }
+
+        document.getElementById("analyzeBtn").addEventListener("click", async function() {
             targetDepth = parseInt(document.getElementById("depthSelect").value);
             
             gameFens = [];
@@ -387,16 +414,19 @@
 
             document.getElementById("analyzeBtn").style.display = "none";
             document.getElementById("analysisProgress").style.display = "block";
-            document.getElementById("analysisProgress").innerText = "Server is analyzing (Hang tight!)...";
+            document.getElementById("analysisProgress").innerText = "Server is analyzing and fetching theory (Hang tight!)...";
             
-            // Sending the game for python to analyse it with Stockfish
-            fetch('/api/analyze', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ fens: gameFens, depth: targetDepth })
-            })
-            .then(response => response.json())
-            .then(data => {
+            try {
+                var pythonPromise = fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fens: gameFens, depth: targetDepth })
+                }).then(r => r.json());
+
+                var bookPromise = getBookMovesCount(verboseHistory);
+
+                var [data, trueBookLength] = await Promise.all([pythonPromise, bookPromise]);
+
                 if(data.error) {
                     document.getElementById("analysisProgress").innerText = "Error: " + data.error;
                     document.getElementById("analyzeBtn").style.display = "block";
@@ -404,7 +434,7 @@
                 }
                 
                 gameEvals = data.evals;
-                var gameBestMoves = data.best_moves; // The top moves from Python
+                var gameBestMoves = data.best_moves; 
                 moveIcons = new Array(gameEvals.length).fill(null);
                 
                 for (var i = 1; i < gameEvals.length; i++) {
@@ -418,7 +448,7 @@
                     var isEngineTopChoice = (playedUci === gameBestMoves[i - 1]);
                     
                     var iconData;
-                    if (i <= 10 && previousEval > -1.0 && previousEval < 1.0 && currentMoveEval > -1.0 && currentMoveEval < 1.0) { 
+                    if (i <= trueBookLength) { 
                         iconData = { symbol: "📖", class: "book" };
                     } else {
                         iconData = getAccuracyIcon(currentMoveEval, previousEval, wasWhiteMove, isEngineTopChoice);
@@ -430,12 +460,12 @@
                 }
                 
                 finishAnalysis();
-            })
-            .catch(err => {
+
+            } catch(err) {
                 document.getElementById("analysisProgress").innerText = "Server connection failed.";
                 document.getElementById("analyzeBtn").style.display = "block";
                 console.error(err);
-            });
+            }
         });
 
         function finishAnalysis() {
@@ -472,7 +502,6 @@
             updateUI(); 
         }
 
-        // Needs a lot of fixing and openings book
         function getWinChance(cp) {
             return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * cp)) - 1);
         }
@@ -482,17 +511,16 @@
             var currW = getWinChance(currentEval * 100);
             
             var wpl = wasWhiteMove ? (prevW - currW) : (currW - prevW);
-            
             wpl = Math.max(0, wpl);
 
             if (isEngineTopChoice) return { symbol: "⭐", class: "best" };
 
-            if (wpl <= 3.0)  return { symbol: "👍", class: "excellent" };  // ~0.3 pawns
-            if (wpl <= 5.0)  return { symbol: "✔️", class: "okay" };       // ~0.5 pawns
-            if (wpl <= 9.0)  return { symbol: "?!", class: "inaccuracy" }; // ~1.0 pawns
-            if (wpl <= 15.0) return { symbol: "?", class: "mistake" };     // ~1.7 pawns
+            if (wpl <= 3.0)  return { symbol: "👍", class: "excellent" };  
+            if (wpl <= 5.0)  return { symbol: "✔️", class: "okay" };       
+            if (wpl <= 9.0)  return { symbol: "?!", class: "inaccuracy" }; 
+            if (wpl <= 15.0) return { symbol: "?", class: "mistake" };     
             
-            return { symbol: "??", class: "blunder" }; // > 2.0 pawns
+            return { symbol: "??", class: "blunder" }; 
         }
 
         function calculateOverallAccuracy() {
@@ -507,10 +535,12 @@
                 wpl = Math.max(0, wpl);
                 
                 var moveAcc;
-                if (i <= 10 && wpl <= 1.5) {
+                // If it was tagged as a theory move by the API, it's a perfect 100!
+                if (moveIcons[i] && moveIcons[i].class === "book") {
                     moveAcc = 100; 
                 } else {
-                    moveAcc = 100 - (wpl * 1.5); 
+                    // NEW: Exponential Decay Curve. Punishes blunders severely, forgives slight inaccuracies.
+                    moveAcc = 100 * Math.exp(-0.04 * wpl); 
                 }
                 
                 moveAcc = Math.max(0, Math.min(100, moveAcc));
@@ -546,6 +576,7 @@
                 squareEl.append(icon);
             }
         }
+
         function renderChart() {
             var ctx = document.getElementById('evalChart').getContext('2d');
             if (evalChartInstance) evalChartInstance.destroy();
